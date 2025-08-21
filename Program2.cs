@@ -16,8 +16,8 @@ class ConsoleApp1
     static async Task Main(string[] args)
     {
         // 🔑 API-Key und ntfy-Topic HIER einsetzen
-        string apiKey = "DEIN_ALPHA_VANTAGE_KEY";
-        string ntfyTopic = "dein-topic";
+        string apiKey = "2KFFV8DIGOLMJTIS";
+        string ntfyTopic = "mein-script";
 
         // 🔗 Google Drive Direktlink (uc?export=download&id=...)
         string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6";
@@ -103,3 +103,4 @@ class ConsoleApp1
         return stocks;
     }
 }
+

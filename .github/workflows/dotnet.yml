@@ -28,4 +28,4 @@ jobs:
         env:
           ALPHA_KEY: ${{ secrets.ALPHA_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: dotnet run --project ConsoleApp1
+        run: dotnet run --project ConsoleApp1.csproj

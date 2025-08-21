@@ -20,8 +20,7 @@ class ConsoleApp1
         string ntfyTopic = "mein-script";
 
         // 🔗 Google Drive Direktlink (uc?export=download&id=...)
-        string csvUrl = "https://docs.google.com/spreadsheets/d/1zc7gNCnxdxPSTJTnZQl3FD4lU2CdmIr3AuMxMw0mDqQ/export?format=csv";
-
+        string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6"
         // CSV laden
         var stocks = await LoadStocksFromWeb(csvUrl);
 
@@ -103,5 +102,6 @@ class ConsoleApp1
         return stocks;
     }
 }
+
 
 

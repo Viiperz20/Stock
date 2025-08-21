@@ -5,88 +5,98 @@ using System.Threading.Tasks;
 using System.Globalization;
 using System.Collections.Generic;
 
+class StockConfig
+{
+    public string Symbol { get; set; }
+    public decimal ThresholdEUR { get; set; }
+}
+
 class ConsoleApp1
 {
-    class StockConfig
-    {
-        public string Symbol { get; set; }
-        public decimal ThresholdEUR { get; set; }
-    }
-
     static async Task Main(string[] args)
     {
-        string apiKey = "2KFFV8DIGOLMJTIS"; // besser über Secrets
-        string ntfyTopic = "mein-script";
+        // 🔑 API-Key und ntfy-Topic HIER einsetzen
+        string apiKey = "DEIN_ALPHA_VANTAGE_KEY";
+        string ntfyTopic = "dein-topic";
 
-        string csvUrl = "https://docs.google.com/spreadsheets/d/1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6/export?format=csv";
+        // 🔗 Google Drive Direktlink (uc?export=download&id=...)
+        string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6";
 
+        // CSV laden
         var stocks = await LoadStocksFromWeb(csvUrl);
-        if (stocks.Count == 0)
+
+        using (HttpClient client = new HttpClient())
         {
-            Console.WriteLine("Keine Aktien in der Liste gefunden!");
-            return;
-        }
+            // Wechselkurs USD -> EUR holen
+            string fxUrl = $"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=EUR&apikey={apiKey}";
+            string fxResult = await client.GetStringAsync(fxUrl);
+            using JsonDocument fxDoc = JsonDocument.Parse(fxResult);
+            decimal fxRate = decimal.Parse(
+                fxDoc.RootElement
+                .GetProperty("Realtime Currency Exchange Rate")
+                .GetProperty("5. Exchange Rate")
+                .GetString(),
+                CultureInfo.InvariantCulture);
 
-        using HttpClient client = new HttpClient();
+            Console.WriteLine($"Wechselkurs USD -> EUR: {fxRate}");
 
-        // Wechselkurs USD -> EUR abrufen
-        string fxUrl = $"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=EUR&apikey={apiKey}";
-        string fxResult = await client.GetStringAsync(fxUrl);
-        using JsonDocument fxDoc = JsonDocument.Parse(fxResult);
-        string fxRateStr = fxDoc.RootElement
-            .GetProperty("Realtime Currency Exchange Rate")
-            .GetProperty("5. Exchange Rate")
-            .GetString();
-        decimal fxRate = decimal.Parse(fxRateStr, CultureInfo.InvariantCulture);
-        Console.WriteLine($"Wechselkurs USD -> EUR: {fxRate}");
-
-        foreach (var stock in stocks)
-        {
-            string stockUrl = $"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={stock.Symbol}&apikey={apiKey}";
-            string stockResult = await client.GetStringAsync(stockUrl);
-            using JsonDocument stockDoc = JsonDocument.Parse(stockResult);
-
-            if (!stockDoc.RootElement.TryGetProperty("Global Quote", out JsonElement quote))
+            // Alle Aktien prüfen
+            foreach (var stock in stocks)
             {
-                Console.WriteLine($"Keine Kursdaten für {stock.Symbol} erhalten!");
-                continue;
-            }
+                try
+                {
+                    string stockUrl = $"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={stock.Symbol}&apikey={apiKey}";
+                    string stockResult = await client.GetStringAsync(stockUrl);
+                    using JsonDocument stockDoc = JsonDocument.Parse(stockResult);
 
-            string preisStr = quote.GetProperty("05. price").GetString();
-            decimal kursUSD = decimal.Parse(preisStr, CultureInfo.InvariantCulture);
-            decimal kursEUR = kursUSD * fxRate;
+                    if (!stockDoc.RootElement.TryGetProperty("Global Quote", out JsonElement quote))
+                    {
+                        Console.WriteLine($"⚠️ Keine Kursdaten für {stock.Symbol} erhalten!");
+                        continue;
+                    }
 
-            Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD (≈ {kursEUR:F2} €)");
+                    string preisStr = quote.GetProperty("05. price").GetString();
+                    decimal kursUSD = decimal.Parse(preisStr, CultureInfo.InvariantCulture);
+                    decimal kursEUR = kursUSD * fxRate;
 
-            // Prüfen, ob Kurs in EUR über Schwelle liegt
-            if (kursEUR >= stock.ThresholdEUR)
-            {
-                string nachricht = $"🚀 {stock.Symbol} hat {kursEUR:F2} € erreicht (Schwelle {stock.ThresholdEUR:F2} €)!";
-                var content = new StringContent(nachricht);
-                var response = await client.PostAsync($"https://ntfy.sh/{ntfyTopic}", content);
-                Console.WriteLine($"Push gesendet: {response.StatusCode}");
+                    Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD ≈ {kursEUR:F2} EUR (Schwelle: {stock.ThresholdEUR} EUR)");
+
+                    // Benachrichtigung, wenn Schwelle erreicht
+                    if (kursEUR >= stock.ThresholdEUR)
+                    {
+                        string nachricht = $"🚀 {stock.Symbol} hat {kursUSD:F2} USD (≈ {kursEUR:F2} €) erreicht! Schwelle: {stock.ThresholdEUR} €";
+                        var content = new StringContent(nachricht);
+                        var response = await client.PostAsync($"https://ntfy.sh/{ntfyTopic}", content);
+                        Console.WriteLine($"📩 Push gesendet ({response.StatusCode})");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Fehler bei {stock.Symbol}: {ex.Message}");
+                }
             }
         }
     }
 
+    // CSV von Google Drive laden
     static async Task<List<StockConfig>> LoadStocksFromWeb(string url)
     {
-        using HttpClient client = new HttpClient();
+        using var client = new HttpClient();
         string csv = await client.GetStringAsync(url);
         var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         var stocks = new List<StockConfig>();
 
-        for (int i = 1; i < lines.Length; i++) // Header überspringen
+        for (int i = 1; i < lines.Length; i++) // erste Zeile = Header
         {
             var parts = lines[i].Split(',');
             if (parts.Length < 2) continue;
 
-            if (decimal.TryParse(parts[1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out decimal thresholdEUR))
+            if (decimal.TryParse(parts[1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out decimal threshold))
             {
                 stocks.Add(new StockConfig
                 {
                     Symbol = parts[0].Trim(),
-                    ThresholdEUR = thresholdEUR
+                    ThresholdEUR = threshold
                 });
             }
         }

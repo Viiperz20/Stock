@@ -1,0 +1,31 @@
+name: Run Stock Alert
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # alle 5 Minuten
+  workflow_dispatch:         # manuell starten möglich
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'   # oder '7.0.x', je nachdem was du nutzt
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Run app
+        env:
+          ALPHA_KEY: ${{ secrets.ALPHA_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: dotnet run --project ConsoleApp1

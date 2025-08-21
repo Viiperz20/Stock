@@ -2,7 +2,7 @@ name: Run Stock Alert
 
 on:
   schedule:
-    - cron: "30-59/5 7-22 * * *"   # Alle 5 Minuten von 07:30 bis 22:30 UTC
+    - cron: "*/5 7-23 * * *"   # Alle 5 Minuten von 07:30 bis 22:30 UTC
   workflow_dispatch:         # Manuell starten möglich
 
 jobs:

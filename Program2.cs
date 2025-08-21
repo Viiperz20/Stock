@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -9,11 +9,10 @@ class ConsoleApp1
     static async Task Main(string[] args)
     {
         // API Key & Topic aus Environment Variables holen
-        string apiKey = Environment.GetEnvironmentVariable("ALPHA_KEY");
-        string ntfyTopic = Environment.GetEnvironmentVariable("NTFY_TOPIC");
+        string apiKey = "2KFFV8DIGOLMJTIS";
+        string ntfyTopic = "mein-script";
 
         string symbol = "NVDA";             // Nvidia
-        decimal schwelleUSD = 170.00m;      // Alarm ab 170 USD
 
         string stockUrl = $"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={apiKey}";
         string fxUrl = $"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=EUR&apikey={apiKey}";

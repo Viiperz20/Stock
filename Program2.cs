@@ -15,24 +15,24 @@ class ConsoleApp1
 {
     static async Task Main(string[] args)
     {
-        // 🔑 API-Key und ntfy-Topic HIER einsetzen
-        string apiKey = "Opw0EYx4cxjB9ow49LAWllG9rmo9Hnp7";
+        // 🔑 Finnhub API-Schlüssel für Aktienkurs und ExchangeRate API-Schlüssel für den Wechselkurs
+        string finnhubApiKey = "d1rtm7pr01qskg7q9rp0d1rtm7pr01qskg7q9rpg"; // Dein Finnhub API-Schlüssel
+        string exchangeRateApiKey = "08865cd18e1aa40e2458a9a5"; // Dein ExchangeRate API-Schlüssel
         string ntfyTopic = "mein-script";
 
-        // 🔗 Google Drive Direktlink (uc?export=download&id=...)
-        string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6";
+        // URL für die CSV-Datei auf GitHub
+        string csvUrl = "https://raw.githubusercontent.com/Viiperz20/Stock/main/aktien.csv";  // Dein GitHub Raw-Link
 
-        // CSV laden
         var stocks = await LoadStocksFromWeb(csvUrl);
 
         using (HttpClient client = new HttpClient())
         {
-            // Wechselkurs USD -> EUR holen (Polygon)
-            string fxUrl = $"https://api.polygon.io/v1/conversion/USD/EUR?amount=1&apiKey={apiKey}";
+            // Wechselkurs USD -> EUR holen (ExchangeRate API)
+            string fxUrl = $"https://v6.exchangerate-api.com/v6/{exchangeRateApiKey}/latest/USD";
             string fxResult = await client.GetStringAsync(fxUrl);
             using JsonDocument fxDoc = JsonDocument.Parse(fxResult);
 
-            decimal fxRate = fxDoc.RootElement.GetProperty("converted").GetDecimal();
+            decimal fxRate = fxDoc.RootElement.GetProperty("conversion_rates").GetProperty("EUR").GetDecimal();
             Console.WriteLine($"Wechselkurs USD -> EUR: {fxRate}");
 
             // Alle Aktien prüfen
@@ -40,23 +40,17 @@ class ConsoleApp1
             {
                 try
                 {
-                    // Kurs von Polygon holen
-                    string stockUrl = $"https://api.polygon.io/v2/last/trade/{stock.Symbol}?apiKey={apiKey}";
+                    // Kurs von Finnhub holen
+                    string stockUrl = $"https://finnhub.io/api/v1/quote?symbol={stock.Symbol}&token={finnhubApiKey}";
                     string stockResult = await client.GetStringAsync(stockUrl);
                     using JsonDocument stockDoc = JsonDocument.Parse(stockResult);
 
-                    if (!stockDoc.RootElement.TryGetProperty("last", out JsonElement lastTrade))
-                    {
-                        Console.WriteLine($"⚠️ Keine Kursdaten für {stock.Symbol} erhalten!");
-                        continue;
-                    }
-
-                    decimal kursUSD = lastTrade.GetProperty("price").GetDecimal();
+                    decimal kursUSD = stockDoc.RootElement.GetProperty("c").GetDecimal();
                     decimal kursEUR = kursUSD * fxRate;
 
                     Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD ≈ {kursEUR:F2} EUR (Schwelle: {stock.ThresholdEUR} EUR)");
 
-                    // Benachrichtigung, wenn Schwelle erreicht
+                    // Benachrichtigung senden, wenn Schwelle erreicht
                     if (kursEUR >= stock.ThresholdEUR)
                     {
                         string nachricht = $"🚀 {stock.Symbol} hat {kursUSD:F2} USD (≈ {kursEUR:F2} €) erreicht! Schwelle: {stock.ThresholdEUR} €";
@@ -73,7 +67,7 @@ class ConsoleApp1
         }
     }
 
-    // CSV von Google Drive laden
+    // CSV von GitHub laden
     static async Task<List<StockConfig>> LoadStocksFromWeb(string url)
     {
         using var client = new HttpClient();

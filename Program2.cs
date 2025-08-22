@@ -16,27 +16,23 @@ class ConsoleApp1
     static async Task Main(string[] args)
     {
         // 🔑 API-Key und ntfy-Topic HIER einsetzen
-        string apiKey = "2KFFV8DIGOLMJTIS";
+        string apiKey = "Opw0EYx4cxjB9ow49LAWllG9rmo9Hnp7";
         string ntfyTopic = "mein-script";
 
         // 🔗 Google Drive Direktlink (uc?export=download&id=...)
-        string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6"
+        string csvUrl = "https://drive.google.com/uc?export=download&id=1F24wlEfp9GhMTJrIIJKRV8aGEUJ1DnD6";
+
         // CSV laden
         var stocks = await LoadStocksFromWeb(csvUrl);
 
         using (HttpClient client = new HttpClient())
         {
-            // Wechselkurs USD -> EUR holen
-            string fxUrl = $"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=EUR&apikey={apiKey}";
+            // Wechselkurs USD -> EUR holen (Polygon)
+            string fxUrl = $"https://api.polygon.io/v1/conversion/USD/EUR?amount=1&apiKey={apiKey}";
             string fxResult = await client.GetStringAsync(fxUrl);
             using JsonDocument fxDoc = JsonDocument.Parse(fxResult);
-            decimal fxRate = decimal.Parse(
-                fxDoc.RootElement
-                .GetProperty("Realtime Currency Exchange Rate")
-                .GetProperty("5. Exchange Rate")
-                .GetString(),
-                CultureInfo.InvariantCulture);
 
+            decimal fxRate = fxDoc.RootElement.GetProperty("converted").GetDecimal();
             Console.WriteLine($"Wechselkurs USD -> EUR: {fxRate}");
 
             // Alle Aktien prüfen
@@ -44,18 +40,18 @@ class ConsoleApp1
             {
                 try
                 {
-                    string stockUrl = $"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={stock.Symbol}&apikey={apiKey}";
+                    // Kurs von Polygon holen
+                    string stockUrl = $"https://api.polygon.io/v2/last/trade/{stock.Symbol}?apiKey={apiKey}";
                     string stockResult = await client.GetStringAsync(stockUrl);
                     using JsonDocument stockDoc = JsonDocument.Parse(stockResult);
 
-                    if (!stockDoc.RootElement.TryGetProperty("Global Quote", out JsonElement quote))
+                    if (!stockDoc.RootElement.TryGetProperty("last", out JsonElement lastTrade))
                     {
                         Console.WriteLine($"⚠️ Keine Kursdaten für {stock.Symbol} erhalten!");
                         continue;
                     }
 
-                    string preisStr = quote.GetProperty("05. price").GetString();
-                    decimal kursUSD = decimal.Parse(preisStr, CultureInfo.InvariantCulture);
+                    decimal kursUSD = lastTrade.GetProperty("price").GetDecimal();
                     decimal kursEUR = kursUSD * fxRate;
 
                     Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD ≈ {kursEUR:F2} EUR (Schwelle: {stock.ThresholdEUR} EUR)");
@@ -102,6 +98,3 @@ class ConsoleApp1
         return stocks;
     }
 }
-
-
-

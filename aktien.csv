@@ -1,6 +1,5 @@
-Symbol,ThresholdEUR
-NVDA,1520
+Symbol,ThresholdEUR,Status
+NVDA,153,G
 
-TSLA,2900
+TSLA,2900,G
 
-XRP,1

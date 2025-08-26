@@ -4,40 +4,42 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Globalization;
 using System.Collections.Generic;
-using System.IO;
 
 class StockConfig
 {
     public string Symbol { get; set; }
     public decimal ThresholdEUR { get; set; }
-    public string Status { get; set; } // "G", "L" oder null
+    public string Status { get; set; } // "G", "L" oder ""
 }
 
 class ConsoleApp1
 {
     static async Task Main(string[] args)
     {
+        // 🔑 API-Keys
         string finnhubApiKey = "d1rtm7pr01qskg7q9rp0d1rtm7pr01qskg7q9rpg"; 
         string exchangeRateApiKey = "08865cd18e1aa40e2458a9a5"; 
         string ntfyTopic = "mein-script";
 
+        // CSV-Datei von GitHub laden (READ-ONLY)
         string csvUrl = "https://raw.githubusercontent.com/Viiperz20/Stock/main/aktien.csv";
-
         var stocks = await LoadStocksFromWeb(csvUrl);
 
         using (HttpClient client = new HttpClient())
         {
+            // Wechselkurs USD -> EUR
             string fxUrl = $"https://v6.exchangerate-api.com/v6/{exchangeRateApiKey}/latest/USD";
             string fxResult = await client.GetStringAsync(fxUrl);
             using JsonDocument fxDoc = JsonDocument.Parse(fxResult);
-
             decimal fxRate = fxDoc.RootElement.GetProperty("conversion_rates").GetProperty("EUR").GetDecimal();
             Console.WriteLine($"Wechselkurs USD -> EUR: {fxRate}");
 
+            // Alle Aktien prüfen
             foreach (var stock in stocks)
             {
                 try
                 {
+                    // Kurs von Finnhub holen
                     string stockUrl = $"https://finnhub.io/api/v1/quote?symbol={stock.Symbol}&token={finnhubApiKey}";
                     string stockResult = await client.GetStringAsync(stockUrl);
                     using JsonDocument stockDoc = JsonDocument.Parse(stockResult);
@@ -45,28 +47,37 @@ class ConsoleApp1
                     decimal kursUSD = stockDoc.RootElement.GetProperty("c").GetDecimal();
                     decimal kursEUR = kursUSD * fxRate;
 
-                    Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD ≈ {kursEUR:F2} EUR (Schwelle: {stock.ThresholdEUR} EUR)");
+                    Console.WriteLine($"{stock.Symbol}: {kursUSD:F2} USD ≈ {kursEUR:F2} EUR (Schwelle: {stock.ThresholdEUR} EUR, CSV-Status: {stock.Status})");
 
-                    // Nur G oder L setzen, wenn Wert abweicht
-                    if (kursEUR > stock.ThresholdEUR)
+                    // ---- NEUE BENACHRICHTIGUNGS-LOGIK ----
+                    if (stock.Status == "G")
                     {
-                        stock.Status = "G"; // größer
-                        string nachricht = $"🚀 {stock.Symbol} über Schwelle! {kursUSD:F2} USD (≈ {kursEUR:F2} €) > {stock.ThresholdEUR} €";
-                        var content = new StringContent(nachricht);
-                        var response = await client.PostAsync($"https://ntfy.sh/{ntfyTopic}", content);
-                        Console.WriteLine($"📩 Push gesendet ({response.StatusCode})");
+                        if (kursEUR > stock.ThresholdEUR)
+                        {
+                            string nachricht = $"🚀 {stock.Symbol} über Schwelle! {kursEUR:F2} € > {stock.ThresholdEUR} €";
+                            await SendNotification(client, ntfyTopic, nachricht);
+                        }
                     }
-                    else if (kursEUR < stock.ThresholdEUR)
+                    else if (stock.Status == "L")
                     {
-                        stock.Status = "L"; // kleiner
-                        string nachricht = $"📉 {stock.Symbol} unter Schwelle! {kursUSD:F2} USD (≈ {kursEUR:F2} €) < {stock.ThresholdEUR} €";
-                        var content = new StringContent(nachricht);
-                        var response = await client.PostAsync($"https://ntfy.sh/{ntfyTopic}", content);
-                        Console.WriteLine($"📩 Push gesendet ({response.StatusCode})");
+                        if (kursEUR < stock.ThresholdEUR)
+                        {
+                            string nachricht = $"📉 {stock.Symbol} unter Schwelle! {kursEUR:F2} € < {stock.ThresholdEUR} €";
+                            await SendNotification(client, ntfyTopic, nachricht);
+                        }
                     }
-                    else
+                    else // Status leer
                     {
-                        stock.Status = ""; // gleich -> nichts eintragen
+                        if (kursEUR > stock.ThresholdEUR)
+                        {
+                            string nachricht = $"🚀 {stock.Symbol} über Schwelle! {kursEUR:F2} € > {stock.ThresholdEUR} €";
+                            await SendNotification(client, ntfyTopic, nachricht);
+                        }
+                        else if (kursEUR < stock.ThresholdEUR)
+                        {
+                            string nachricht = $"📉 {stock.Symbol} unter Schwelle! {kursEUR:F2} € < {stock.ThresholdEUR} €";
+                            await SendNotification(client, ntfyTopic, nachricht);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -75,11 +86,9 @@ class ConsoleApp1
                 }
             }
         }
-
-        // CSV lokal überschreiben
-        SaveStocksToCsv("aktien_mit_status.csv", stocks);
     }
 
+    // CSV von GitHub laden
     static async Task<List<StockConfig>> LoadStocksFromWeb(string url)
     {
         using var client = new HttpClient();
@@ -94,26 +103,23 @@ class ConsoleApp1
 
             if (decimal.TryParse(parts[1].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out decimal threshold))
             {
+                string status = parts.Length >= 3 ? parts[2].Trim() : "";
                 stocks.Add(new StockConfig
                 {
                     Symbol = parts[0].Trim(),
-                    ThresholdEUR = threshold
+                    ThresholdEUR = threshold,
+                    Status = status
                 });
             }
         }
         return stocks;
     }
 
-    static void SaveStocksToCsv(string path, List<StockConfig> stocks)
+    // Push-Nachricht senden
+    static async Task SendNotification(HttpClient client, string topic, string message)
     {
-        using (var writer = new StreamWriter(path))
-        {
-            writer.WriteLine("Symbol,ThresholdEUR,Status"); // Header
-            foreach (var stock in stocks)
-            {
-                writer.WriteLine($"{stock.Symbol},{stock.ThresholdEUR},{stock.Status}");
-            }
-        }
-        Console.WriteLine($"💾 CSV gespeichert unter: {path}");
+        var content = new StringContent(message);
+        var response = await client.PostAsync($"https://ntfy.sh/{topic}", content);
+        Console.WriteLine($"📩 Push gesendet ({response.StatusCode})");
     }
 }
